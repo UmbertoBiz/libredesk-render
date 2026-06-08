@@ -1,28 +1,40 @@
-# Use the official Libredesk image
-FROM libredesk/libredesk:latest
+# ---- Build stage ----
+FROM golang:1.24-alpine AS builder
 
-# Switch to root user to fix permissions
-USER root
-
-# Fix execute permissions on the libredesk binary
-RUN chmod +x /libredesk
+# Install git for fetching dependencies
+RUN apk add --no-cache git
 
 # Set the working directory
-WORKDIR /
+WORKDIR /app
 
-# Create a start script
-RUN printf '#!/bin/sh\n\
-set -e\n\
-echo "Running database install (idempotent)..."\n\
-./libredesk --install --idempotent-install --yes --config ""\n\
-echo "Running database upgrades..."\n\
-./libredesk --upgrade --yes --config ""\n\
-echo "Starting Libredesk server..."\n\
-exec ./libredesk --config ""\n\
-' > /start.sh && chmod +x /start.sh
+# Clone the repository
+RUN git clone https://github.com/abhinavxd/libredesk.git .
+
+# Download dependencies and build the binary
+RUN go mod download && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o libredesk ./cmd/libredesk
+
+# ---- Runtime stage ----
+FROM alpine:3.19
+
+# Install ca-certificates for HTTPS and tzdata for timezone support
+RUN apk add --no-cache ca-certificates tzdata
+
+# Set the working directory where the binary will live
+WORKDIR /app
+
+# Copy the binary from the builder stage
+COPY --from=builder /app/libredesk /app/libredesk
+
+# Ensure the binary is executable
+RUN chmod +x /app/libredesk
+
+# Copy a custom entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 # Expose the port
 EXPOSE 9000
 
-# Run the start script
-CMD ["/start.sh"]
+# Use the entrypoint script to run migrations and start the server
+ENTRYPOINT ["/entrypoint.sh"]
