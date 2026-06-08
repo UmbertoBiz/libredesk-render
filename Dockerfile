@@ -1,40 +1,38 @@
-# ---- Build stage ----
-FROM golang:1.25-alpine AS builder
+# ---- Stage 1: Extract the libredesk binary from the official image ----
+FROM libredesk/libredesk:latest AS builder
 
-# Install git for fetching dependencies
-RUN apk add --no-cache git
-
-# Set the working directory
-WORKDIR /app
-
-# Clone the repository
-RUN git clone https://github.com/abhinavxd/libredesk.git .
-
-# Download dependencies and build the binary
-RUN go mod download && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o libredesk ./cmd/libredesk
-
-# ---- Runtime stage ----
+# ---- Stage 2: Build a minimal Alpine-based image that includes a shell ----
 FROM alpine:3.19
 
-# Install ca-certificates for HTTPS and tzdata for timezone support
+# Install ca-certificates (needed for HTTPS) and tzdata (for timezone support)
 RUN apk add --no-cache ca-certificates tzdata
 
 # Set the working directory
 WORKDIR /app
 
-# Copy the binary from the builder stage
-COPY --from=builder /app/libredesk /app/libredesk
+# Copy the libredesk binary from the builder stage
+COPY --from=builder /libredesk /app/libredesk
 
 # Ensure the binary is executable
 RUN chmod +x /app/libredesk
 
-# Copy a custom entrypoint script
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Create a startup script that runs the install, upgrade, and then the server
+RUN printf '#!/bin/sh\n\
+set -e\n\
+echo "Running database install (idempotent)..."\n\
+/app/libredesk --install --idempotent-install --yes --config ""\n\
+echo "Running database upgrades..."\n\
+/app/libredesk --upgrade --yes --config ""\n\
+echo "Starting Libredesk server..."\n\
+exec /app/libredesk --config ""\n\
+' > /start.sh && chmod +x /start.sh
 
 # Expose the port
 EXPOSE 9000
 
-# Use the entrypoint script to run migrations and start the server
-ENTRYPOINT ["/entrypoint.sh"]
+# Health check (optional)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD /app/libredesk --version || exit 1
+
+# Run the startup script
+CMD ["/start.sh"]
