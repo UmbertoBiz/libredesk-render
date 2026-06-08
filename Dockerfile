@@ -1,10 +1,16 @@
 # Use the official Libredesk image
 FROM libredesk/libredesk:latest
 
-# Set the working directory to the root where the binary is located
+# Switch to root user to fix permissions
+USER root
+
+# Fix execute permissions on the libredesk binary
+RUN chmod +x /libredesk
+
+# Set the working directory
 WORKDIR /
 
-# Create a start script that runs the commands from the correct location
+# Create a start script
 RUN printf '#!/bin/sh\n\
 set -e\n\
 echo "Running database install (idempotent)..."\n\
