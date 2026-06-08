@@ -1,6 +1,31 @@
-FROM libredesk/libredesk:latest
+# Build stage
+FROM golang:1.23-alpine AS builder
 
-# Copy a start script into the container
+WORKDIR /build
+
+# Install git
+RUN apk add --no-cache git
+
+# Clone the latest Libredesk source
+RUN git clone https://github.com/libredesk/libredesk.git . && \
+    git checkout $(git describe --tags $(git rev-list --tags --max-count=1))
+
+# Download dependencies and build the binary
+RUN go mod download && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o libredesk ./cmd/libredesk
+
+# Final stage – small Alpine image
+FROM alpine:3.19
+
+# Install ca-certificates for HTTPS (required for S3/R2)
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+
+# Copy the binary from builder
+COPY --from=builder /build/libredesk /usr/local/bin/libredesk
+
+# Create a simple start script
 RUN printf '#!/bin/sh\n\
 set -e\n\
 echo "Running database install (idempotent)..."\n\
@@ -11,12 +36,9 @@ echo "Starting Libredesk server..."\n\
 exec libredesk --config ""\n\
 ' > /start.sh && chmod +x /start.sh
 
-# Expose the port Render expects
 EXPOSE 9000
 
-# Make sure the service stays healthy
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD libredesk --version || exit 1
 
-# This is what Render will run
 CMD ["/start.sh"]
