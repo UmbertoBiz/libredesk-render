@@ -1,5 +1,5 @@
 # ---- Build stage ----
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Install git for fetching dependencies
 RUN apk add --no-cache git
@@ -20,7 +20,7 @@ FROM alpine:3.19
 # Install ca-certificates for HTTPS and tzdata for timezone support
 RUN apk add --no-cache ca-certificates tzdata
 
-# Set the working directory where the binary will live
+# Set the working directory
 WORKDIR /app
 
 # Copy the binary from the builder stage
