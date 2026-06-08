@@ -1,23 +1,22 @@
-# Use the official image with a specific version tag
-FROM libredesk/libredesk:v2.2.1
+# Use the official Libredesk image
+FROM libredesk/libredesk:latest
 
-# Copy a start script into the container
+# Set the working directory to the root where the binary is located
+WORKDIR /
+
+# Create a start script that runs the commands from the correct location
 RUN printf '#!/bin/sh\n\
 set -e\n\
 echo "Running database install (idempotent)..."\n\
-/app/libredesk --install --idempotent-install --yes --config ""\n\
+./libredesk --install --idempotent-install --yes --config ""\n\
 echo "Running database upgrades..."\n\
-/app/libredesk --upgrade --yes --config ""\n\
+./libredesk --upgrade --yes --config ""\n\
 echo "Starting Libredesk server..."\n\
-exec /app/libredesk --config ""\n\
+exec ./libredesk --config ""\n\
 ' > /start.sh && chmod +x /start.sh
 
-# Expose the port Render expects
+# Expose the port
 EXPOSE 9000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD /app/libredesk --version || exit 1
-
-# This is what Render will run
+# Run the start script
 CMD ["/start.sh"]
